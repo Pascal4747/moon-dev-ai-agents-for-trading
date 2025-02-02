@@ -122,7 +122,7 @@ class FocusAgent:
         self.current_transcript = []
         
         # Add data directory path
-        self.data_dir = Path("/Users/md/Dropbox/dev/github/moon-dev-ai-agents-for-trading/src/data")
+        self.data_dir = Path("src/data")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.focus_log_path = self.data_dir / "focus_history.csv"
         
@@ -152,28 +152,62 @@ class FocusAgent:
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=SAMPLE_RATE,
             language_code="en-US",
+            enable_automatic_punctuation=True,
         )
         streaming_config = speech.StreamingRecognitionConfig(config=config)
         
         def audio_generator():
-            audio = pyaudio.PyAudio()
-            stream = audio.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=SAMPLE_RATE,
-                input=True,
-                frames_per_buffer=AUDIO_CHUNK_SIZE
-            )
+            p = pyaudio.PyAudio()
             
+            # List available devices
+            cprint("\nAvailable audio input devices:", "cyan")
+            for i in range(p.get_device_count()):
+                dev_info = p.get_device_info_by_index(i)
+                if dev_info.get('maxInputChannels') > 0:
+                    cprint(f"Device {i}: {dev_info.get('name')}", "yellow")
+            
+            # Try to find a working input device
+            working_device = None
+            for i in range(p.get_device_count()):
+                dev_info = p.get_device_info_by_index(i)
+                if dev_info.get('maxInputChannels') > 0:
+                    try:
+                        stream = p.open(
+                            format=pyaudio.paInt16,
+                            channels=1,
+                            rate=SAMPLE_RATE,
+                            input=True,
+                            input_device_index=i,
+                            frames_per_buffer=AUDIO_CHUNK_SIZE
+                        )
+                        stream.start_stream()
+                        working_device = i
+                        cprint(f"\nUsing input device {i}: {dev_info.get('name')}", "green")
+                        break
+                    except Exception as e:
+                        cprint(f"Could not open device {i}: {str(e)}", "red")
+                        continue
+            
+            if working_device is None:
+                raise ValueError("No working audio input devices found!")
+            
+            cprint("\nRecording...", "cyan")
+            frames = []
             start_time = time_lib.time()
+            
             try:
                 while time_lib.time() - start_time < RECORDING_DURATION:
                     data = stream.read(AUDIO_CHUNK_SIZE, exception_on_overflow=False)
+                    frames.append(data)
+                    cprint(".", "green", end="", flush=True)
                     yield data
+            except Exception as e:
+                cprint(f"\nError during recording: {str(e)}", "red")
             finally:
+                cprint("\nFinishing recording...", "cyan")
                 stream.stop_stream()
                 stream.close()
-                audio.terminate()
+                p.terminate()
         
         try:
             self.is_recording = True
@@ -191,7 +225,9 @@ class FocusAgent:
                 if response.results:
                     for result in response.results:
                         if result.is_final:
-                            self.current_transcript.append(result.alternatives[0].transcript)
+                            transcript = result.alternatives[0].transcript
+                            self.current_transcript.append(transcript)
+                            cprint(f"\nTranscribed: {transcript}", "cyan")
                             
         except Exception as e:
             cprint(f"❌ Error recording audio: {str(e)}", "red")
@@ -317,19 +353,19 @@ class FocusAgent:
 
     def process_transcript(self, transcript):
         """Process transcript and provide focus assessment"""
+        if not transcript.strip():
+            cprint("⚠️ Empty transcript, skipping analysis", "yellow")
+            return 0
+            
+        cprint(f"\n📝 Analyzing transcript: {transcript}", "cyan")
         score, message = self.analyze_focus(transcript)
         
         # Log the data
         self._log_focus_data(score, message)
         
-        # Determine if voice announcement needed
-        needs_voice = score < FOCUS_THRESHOLD
-        
-        # Format message
-        formatted_message = f"{score}/10\n{message}"
-        
-        # Announce
-        self._announce(formatted_message, force_voice=needs_voice)
+        # Always use voice for announcements
+        formatted_message = f"Focus level {score} out of 10. {message}"
+        self._announce(formatted_message, force_voice=True)
         
         return score
 
@@ -361,6 +397,7 @@ class FocusAgent:
                 if self.current_transcript:
                     full_transcript = ' '.join(self.current_transcript)
                     if full_transcript.strip():
+                        cprint(f"\n🎯 Processing transcript: {full_transcript}", "cyan")
                         self.process_transcript(full_transcript)
                     else:
                         cprint("⚠️ No speech detected in sample", "yellow")
