@@ -46,8 +46,8 @@ cprint(f"📂 Project Root: {project_root}", "cyan")
 cprint(f"📝 .env Path: {env_path}", "cyan")
 
 # Model override settings
-MODEL_TYPE = "deepseek"  # Using DeepSeek
-MODEL_NAME = "deepseek-chat"  # Fast chat model
+MODEL_TYPE = "openai"  # Using OpenAI
+MODEL_NAME = "gpt-3.5-turbo"  # Fast chat model
 
 # Configuration for faster testing
 MIN_INTERVAL_MINUTES = 6  # Less than a second
@@ -193,17 +193,17 @@ class FocusAgent:
         def audio_generator():
             p = pyaudio.PyAudio()
             
-            # List available devices
+            # List available devices for debugging
             cprint("\nAvailable audio input devices:", "cyan")
             for i in range(p.get_device_count()):
                 dev_info = p.get_device_info_by_index(i)
                 if dev_info.get('maxInputChannels') > 0:
                     cprint(f"Device {i}: {dev_info.get('name')}", "yellow")
             
-            # Always use device 6 (Stereo Mix)
-            STEREO_MIX_DEVICE = 6
-            dev_info = p.get_device_info_by_index(STEREO_MIX_DEVICE)
-            cprint(f"\nUsing Stereo Mix device: {dev_info.get('name')}", "green")
+            # Use system default input device
+            default_input_device = p.get_default_input_device_info()
+            default_input_index = default_input_device['index']
+            cprint(f"\nUsing default input device: {default_input_device.get('name')}", "green")
             
             try:
                 stream = p.open(
@@ -211,12 +211,11 @@ class FocusAgent:
                     channels=1,
                     rate=SAMPLE_RATE,
                     input=True,
-                    input_device_index=STEREO_MIX_DEVICE,
                     frames_per_buffer=AUDIO_CHUNK_SIZE
                 )
                 stream.start_stream()
             except Exception as e:
-                cprint(f"Error opening Stereo Mix device: {str(e)}", "red")
+                cprint(f"Error opening default input device: {str(e)}", "red")
                 raise
             
             cprint("\nRecording...", "cyan")
@@ -267,9 +266,7 @@ class FocusAgent:
         try:
             cprint(f"\n🗣️ {message}", "cyan")
             
-            if not force_voice:
-                return
-                
+            # Always use voice for announcements
             # Generate speech directly to memory and play
             response = self.openai_client.audio.speech.create(
                 model=VOICE_MODEL,
@@ -278,21 +275,30 @@ class FocusAgent:
                 input=message
             )
             
-            # Create temporary file in system temp directory
-            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+            # Create temporary file with unique name
+            temp_path = os.path.join(tempfile.gettempdir(), f'focus_agent_{int(time_lib.time())}.mp3')
+            
+            with open(temp_path, 'wb') as temp_file:
                 for chunk in response.iter_bytes():
                     temp_file.write(chunk)
-                temp_path = temp_file.name
 
             # Play audio based on OS
             if os.name == 'posix':
                 os.system(f"afplay {temp_path}")
             else:
-                os.system(f"start {temp_path}")
-                time_lib.sleep(5)
+                # Use Windows Media Player for MP3 playback
+                os.system(f'start /wait wmplayer "{temp_path}"')
+                time_lib.sleep(2)  # Give it time to start playing
+                os.system('taskkill /f /im wmplayer.exe >nul 2>&1')  # Close Windows Media Player
             
-            # Cleanup temp file
-            os.unlink(temp_path)
+            # Wait a moment before cleanup
+            time_lib.sleep(1)
+            
+            try:
+                # Cleanup temp file
+                os.unlink(temp_path)
+            except Exception as e:
+                cprint(f"Warning: Could not delete temp file {temp_path}: {str(e)}", "yellow")
             
         except Exception as e:
             cprint(f"❌ Error in announcement: {str(e)}", "red")
@@ -405,14 +411,11 @@ class FocusAgent:
         # Log the data
         self._log_focus_data(score, message)
         
-        # Determine if voice announcement needed
-        needs_voice = score < FOCUS_THRESHOLD
+        # Format message with clear separation
+        formatted_message = f"Focus score is {score} out of 10. {message}"
         
-        # Format message
-        formatted_message = f"{score}/10\n{message}"
-        
-        # Announce
-        self._announce(formatted_message, force_voice=needs_voice)
+        # Always announce with voice
+        self._announce(formatted_message, force_voice=True)
         
         return score
 
