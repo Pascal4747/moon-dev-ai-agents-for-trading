@@ -200,30 +200,24 @@ class FocusAgent:
                 if dev_info.get('maxInputChannels') > 0:
                     cprint(f"Device {i}: {dev_info.get('name')}", "yellow")
             
-            # Try to find a working input device
-            working_device = None
-            for i in range(p.get_device_count()):
-                dev_info = p.get_device_info_by_index(i)
-                if dev_info.get('maxInputChannels') > 0:
-                    try:
-                        stream = p.open(
-                            format=pyaudio.paInt16,
-                            channels=1,
-                            rate=SAMPLE_RATE,
-                            input=True,
-                            input_device_index=i,
-                            frames_per_buffer=AUDIO_CHUNK_SIZE
-                        )
-                        stream.start_stream()
-                        working_device = i
-                        cprint(f"\nUsing input device {i}: {dev_info.get('name')}", "green")
-                        break
-                    except Exception as e:
-                        cprint(f"Could not open device {i}: {str(e)}", "red")
-                        continue
+            # Always use device 6 (Stereo Mix)
+            STEREO_MIX_DEVICE = 6
+            dev_info = p.get_device_info_by_index(STEREO_MIX_DEVICE)
+            cprint(f"\nUsing Stereo Mix device: {dev_info.get('name')}", "green")
             
-            if working_device is None:
-                raise ValueError("No working audio input devices found!")
+            try:
+                stream = p.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=SAMPLE_RATE,
+                    input=True,
+                    input_device_index=STEREO_MIX_DEVICE,
+                    frames_per_buffer=AUDIO_CHUNK_SIZE
+                )
+                stream.start_stream()
+            except Exception as e:
+                cprint(f"Error opening Stereo Mix device: {str(e)}", "red")
+                raise
             
             cprint("\nRecording...", "cyan")
             frames = []
