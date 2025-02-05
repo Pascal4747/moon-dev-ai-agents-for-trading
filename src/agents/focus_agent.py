@@ -58,8 +58,8 @@ AUDIO_CHUNK_SIZE = 2048
 SAMPLE_RATE = 16000
 
 # Schedule settings
-SCHEDULE_START = time(5, 0)  # 5:00 AM
-SCHEDULE_END = time(15, 0)   # 3:00 PM
+SCHEDULE_START = time(6, 0)  # 6:00 AM
+SCHEDULE_END = time(21, 0)   # 9:00 PM
 
 # Voice settings
 VOICE_MODEL = "tts-1"

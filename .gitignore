@@ -10,12 +10,34 @@ config.private.py
 MYNOTES.md
 temp_data/
 moon-dev-449707-b0348687d7e8.json
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+*.aac
+*.wma
+*.webm
+*.m4b
+*.m4p
+*.m4b
+*.m4p
+*.m4b
+*.m4p
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.mpg
+*.mpeg
+
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
 .Python
 env/
 build/

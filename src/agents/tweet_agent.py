@@ -8,18 +8,17 @@ This agent takes text input and generates tweets based on the content.
 # Model override settings
 # Set to "0" to use config.py's AI_MODEL setting
 # Available models:
-# - "deepseek-chat" (DeepSeek's V3 model - fast & efficient)
-# - "deepseek-reasoner" (DeepSeek's R1 reasoning model)
+# - "gpt-3.5-turbo" (Fast & efficient)
+# - "gpt-4" (More powerful but slower)
 # - "0" (Use config.py's AI_MODEL setting)
-MODEL_OVERRIDE = "deepseek-chat"  # Set to "0" to disable override
-DEEPSEEK_BASE_URL = "https://api.deepseek.com"  # Base URL for DeepSeek API
+MODEL_OVERRIDE = "gpt-3.5-turbo"  # Set to "0" to disable override
 
 # Text Processing Settings
 MAX_CHUNK_SIZE = 10000  # Maximum characters per chunk
 TWEETS_PER_CHUNK = 3   # Number of tweets to generate per chunk
 USE_TEXT_FILE = True   # Whether to use og_tweet_text.txt by default
 # if the above is true, then the below is the file to use
-OG_TWEET_FILE = "/Users/md/Dropbox/dev/github/moon-dev-ai-agents-for-trading/src/data/tweets/og_tweet_text.txt"
+OG_TWEET_FILE = "src/data/tweets/og_tweet_text.txt"  # Relative to project root
 
 import os
 import pandas as pd
@@ -37,8 +36,12 @@ import sys
 # Get the project root directory
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-# AI Settings - Override config.py if set
-from src import config
+# Add project root to Python path for imports
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+# AI Settings - Import config
+from src.config import *  # Import all config variables
 
 # Only set these if you want to override config.py settings
 AI_MODEL = False  # Set to model name to override config.AI_MODEL
@@ -81,9 +84,9 @@ class TweetAgent:
     def __init__(self):
         """Initialize the Tweet Agent"""
         # Set AI parameters - use config values unless overridden
-        self.ai_model = MODEL_OVERRIDE if MODEL_OVERRIDE != "0" else config.AI_MODEL
-        self.ai_temperature = AI_TEMPERATURE if AI_TEMPERATURE > 0 else config.AI_TEMPERATURE
-        self.ai_max_tokens = AI_MAX_TOKENS if AI_MAX_TOKENS > 0 else config.AI_MAX_TOKENS
+        self.ai_model = MODEL_OVERRIDE if MODEL_OVERRIDE != "0" else AI_MODEL
+        self.ai_temperature = AI_TEMPERATURE if AI_TEMPERATURE > 0 else AI_TEMPERATURE
+        self.ai_max_tokens = AI_MAX_TOKENS if AI_MAX_TOKENS > 0 else AI_MAX_TOKENS
         
         print(f"🤖 Using AI Model: {self.ai_model}")
         if AI_MODEL or AI_TEMPERATURE > 0 or AI_MAX_TOKENS > 0:
@@ -109,22 +112,14 @@ class TweetAgent:
         openai.api_key = openai_key
         self.client = anthropic.Anthropic(api_key=anthropic_key)
 
-        # Initialize DeepSeek client if needed
-        if "deepseek" in self.ai_model.lower():
-            deepseek_key = os.getenv("DEEPSEEK_KEY")
-            if deepseek_key:
-                self.deepseek_client = openai.OpenAI(
-                    api_key=deepseek_key,
-                    base_url=DEEPSEEK_BASE_URL
-                )
-            else:
-                self.deepseek_client = None
-                print("⚠️ DEEPSEEK_KEY not found - DeepSeek model will not be available")
+        # Initialize OpenAI client if needed
+        if "gpt" in self.ai_model.lower():
+            self.openai_client = openai.OpenAI(api_key=openai_key)
         else:
-            self.deepseek_client = None
+            self.openai_client = None
         
         # Create tweets directory if it doesn't exist
-        self.tweets_dir = Path("/Users/md/Dropbox/dev/github/moon-dev-ai-agents-for-trading/src/data/tweets")
+        self.tweets_dir = PROJECT_ROOT / "src" / "data" / "tweets"
         self.tweets_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate output filename with timestamp
@@ -187,39 +182,18 @@ class TweetAgent:
                 # Prepare the context
                 context = TWEET_PROMPT.format(text=chunk)
                 
-                # Use either DeepSeek or Claude based on model setting
-                if "deepseek" in self.ai_model.lower():
-                    if not self.deepseek_client:
-                        raise ValueError("🚨 DeepSeek client not initialized - check DEEPSEEK_KEY")
-                        
-                    # Make DeepSeek API call
-                    response = self.deepseek_client.chat.completions.create(
-                        model=self.ai_model,
-                        messages=[
-                            {"role": "system", "content": TWEET_PROMPT},
-                            {"role": "user", "content": context}
-                        ],
-                        max_tokens=self.ai_max_tokens,
-                        temperature=self.ai_temperature,
-                        stream=False
-                    )
-                    response_text = response.choices[0].message.content.strip()
-                else:
-                    # Get tweets using Claude
-                    message = self.client.messages.create(
-                        model=self.ai_model,
-                        max_tokens=self.ai_max_tokens,
-                        temperature=self.ai_temperature,
-                        messages=[{
-                            "role": "user",
-                            "content": context
-                        }]
-                    )
-                    # Handle both string and list responses
-                    if isinstance(message.content, list):
-                        response_text = message.content[0].text if message.content else ""
-                    else:
-                        response_text = message.content
+                # Use OpenAI API
+                response = self.openai_client.chat.completions.create(
+                    model=self.ai_model,
+                    messages=[
+                        {"role": "system", "content": TWEET_PROMPT},
+                        {"role": "user", "content": context}
+                    ],
+                    max_tokens=self.ai_max_tokens,
+                    temperature=self.ai_temperature,
+                    stream=False
+                )
+                response_text = response.choices[0].message.content.strip()
                 
                 # Parse tweets from response and remove any numbering
                 chunk_tweets = []
