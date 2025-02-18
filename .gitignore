@@ -31,6 +31,8 @@ moon-dev-449707-b0348687d7e8.json
 *.mpg
 *.mpeg
 
+# Exclude bootcamp folder
+bootcamp/
 
 # Python
 __pycache__/
